@@ -32,19 +32,30 @@ from .utils import (
 def declare_type(
     decls: Annotated[list[str] | str, "C type declarations"],
 ) -> list[dict]:
-    """Declare types"""
-    decls = normalize_list_input(decls)
+    """Declare types
+
+Uses idc.parse_decls internally so it supports #pragma pack, enums,
+typedefs, structs, and all C type declaration syntax.
+"""
+    import idc as _idc
+
+    # Don't use normalize_list_input here - it splits by comma which
+    # breaks enum/struct declarations containing commas
+    if isinstance(decls, str):
+        decls_list = [decls]
+    elif isinstance(decls, list):
+        decls_list = decls
+    else:
+        decls_list = [str(decls)]
+
     results = []
 
-    for decl in decls:
+    for decl in decls_list:
         try:
-            flags = ida_typeinf.PT_SIL | ida_typeinf.PT_EMPTY | ida_typeinf.PT_TYP
-            errors, messages = parse_decls_ctypes(decl, flags)
-
-            pretty_messages = "\n".join(messages)
-            if errors > 0:
+            errors = _idc.parse_decls(decl, 0)
+            if errors != 0:
                 results.append(
-                    {"decl": decl, "error": f"Failed to parse:\n{pretty_messages}"}
+                    {"decl": decl, "error": f"parse_decls returned {errors} errors"}
                 )
             else:
                 results.append({"decl": decl, "ok": True})
@@ -349,8 +360,47 @@ def set_type(edits: list[TypeEdit] | TypeEdit) -> list[dict]:
                     continue
 
                 new_tif = ida_typeinf.tinfo_t(edit["ty"], None, ida_typeinf.PT_SIL)
-                modifier = my_modifier_t(edit["variable"], new_tif)
-                success = ida_hexrays.modify_user_lvars(func.start_ea, modifier)
+                var_name = edit["variable"]
+
+                # First decompile to find the variable in current output
+                cfunc = ida_hexrays.decompile(func.start_ea)
+                if not cfunc:
+                    results.append({"edit": edit, "error": "Decompilation failed"})
+                    continue
+
+                # Find the target lvar
+                target_lv = None
+                for lv in cfunc.get_lvars():
+                    if lv.name == var_name:
+                        target_lv = lv
+                        break
+
+                if target_lv is None:
+                    avail = [lv.name for lv in cfunc.get_lvars()]
+                    results.append({
+                        "edit": edit,
+                        "error": f"Variable '{var_name}' not found. "
+                                 f"Available: {avail}"
+                    })
+                    continue
+
+                # Build saved info from the actual lvar
+                new_info = ida_hexrays.lvar_saved_info_t()
+                new_info.ll = target_lv
+                new_info.name = var_name
+                new_info.type = new_tif
+
+                class _TypeModifier(ida_hexrays.user_lvar_modifier_t):
+                    def __init__(self, info):
+                        ida_hexrays.user_lvar_modifier_t.__init__(self)
+                        self.info = info
+                    def modify_lvars(self, uservec):
+                        uservec.lvvec.push_back(self.info)
+                        return True
+
+                success = ida_hexrays.modify_user_lvars(
+                    func.start_ea, _TypeModifier(new_info)
+                )
                 results.append(
                     {
                         "edit": edit,
