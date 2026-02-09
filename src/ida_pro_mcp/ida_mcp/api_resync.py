@@ -245,6 +245,10 @@ import os
 def _decompile_to_str(ea):
     """Decompile function at ea and return pseudocode string."""
     try:
+        # Clear the cached decompilation to force fresh decompilation
+        # This ensures prototype changes, struct modifications, etc. are applied
+        ida_hexrays.mark_cfunc_dirty(ea)
+        
         cfunc = ida_hexrays.decompile(ea)
         if not cfunc:
             return None
