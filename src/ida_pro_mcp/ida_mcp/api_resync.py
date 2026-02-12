@@ -16,6 +16,9 @@ from .sync import idasync
 # C File Parser
 # ============================================================================
 
+# Matches: #pragma
+_RE_PRAGMA = re.compile(r"^\s*#pragma\s+.*")
+
 # Matches: struct Name {, typedef struct Name {
 _RE_STRUCT = re.compile(
     r"^\s*(?:typedef\s+)?struct\s+(\w+)\s*\{", re.MULTILINE
@@ -203,6 +206,7 @@ def _parse_c_file(content: str) -> dict:
     # Extract preamble: comments before first declaration
     first_significant = len(content)
     for regex in [
+        _RE_PRAGMA,
         _RE_INCLUDE,
         _RE_STRUCT,
         _RE_ENUM,
@@ -248,7 +252,7 @@ def _decompile_to_str(ea):
         # Clear the cached decompilation to force fresh decompilation
         # This ensures prototype changes, struct modifications, etc. are applied
         ida_hexrays.mark_cfunc_dirty(ea)
-        
+
         cfunc = ida_hexrays.decompile(ea)
         if not cfunc:
             return None
