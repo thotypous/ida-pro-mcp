@@ -23,9 +23,9 @@ _RE_PRAGMA = re.compile(r"^\s*#pragma\s+.*")
 _RE_STRUCT = re.compile(
     r"^\s*(?:typedef\s+)?struct\s+(\w+)\s*\{", re.MULTILINE
 )
-# Matches: enum Name {, typedef enum Name {
+# Matches: enum Name {, typedef enum Name {, enum __bitmask Name : Type {
 _RE_ENUM = re.compile(
-    r"^\s*(?:typedef\s+)?enum\s+(\w+)\s*\{", re.MULTILINE
+    r"^\s*(?:typedef\s+)?enum\s+(?:__\w+\s+)?(\w+)(?:\s*:\s*\S+)?\s*\{", re.MULTILINE
 )
 # Matches simple typedefs: typedef int16_t __int16;
 # (but NOT typedef struct/enum, and NOT function pointers)
