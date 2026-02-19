@@ -13,6 +13,7 @@ import ida_idaapi
 import ida_xref
 import ida_ua
 import ida_name
+import ida_hexrays
 from .rpc import tool
 from .sync import idasync, tool_timeout
 from .utils import (
@@ -186,6 +187,9 @@ def decompile(
     """Decompile function to pseudocode"""
     try:
         start = parse_address(addr)
+        # Clear the decompiler cache for this function to ensure fresh output
+        if ida_hexrays.init_hexrays_plugin():
+            ida_hexrays.mark_cfunc_dirty(start)
         code = decompile_function_safe(start)
         if code is None:
             return {"addr": addr, "code": None, "error": "Decompilation failed"}
