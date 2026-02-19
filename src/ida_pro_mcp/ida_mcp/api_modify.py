@@ -510,8 +510,8 @@ def undefine(items: list[UndefineOp] | UndefineOp) -> list[dict]:
             elif size:
                 nbytes = size
             else:
-                # Default: undefine single item
-                nbytes = 1
+                # Default: undefine the entire item at this address
+                nbytes = ida_bytes.get_item_size(start_ea)
 
             success = ida_bytes.del_items(start_ea, ida_bytes.DELIT_EXPAND, nbytes)
             if success:
