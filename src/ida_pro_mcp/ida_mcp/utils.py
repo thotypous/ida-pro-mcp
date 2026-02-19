@@ -688,6 +688,12 @@ def get_type_by_name(type_name: str) -> ida_typeinf.tinfo_t:
     if tif := ida_typeinf.tinfo_t(type_name):
         return tif
 
+    # Complex type declarations (arrays, pointers, etc.)
+    # Try parsing as a full C declaration like "int[10]", "char *", "struct foo *"
+    tif = ida_typeinf.tinfo_t()
+    if ida_typeinf.parse_decl(tif, None, type_name, ida_typeinf.PT_SIL):
+        return tif
+
     raise IDAError(f"Unable to retrieve {type_name} type info object")
 
 
