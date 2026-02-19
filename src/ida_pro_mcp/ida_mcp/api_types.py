@@ -240,7 +240,15 @@ def search_structs(
         str, "Case-insensitive substring to search for in structure names"
     ],
 ) -> list[dict]:
-    """Search structs"""
+    """Search structures by name pattern and return their size and metadata.
+    
+    Returns for each matching struct: name, size (in bytes), cardinality (member count),
+    is_union flag, and ordinal. Use this to find struct sizes without writing Python code.
+    
+    Examples:
+    - search_structs("state") -> returns all structs with "state" in name
+    - search_structs("echo_state_t") -> returns exact match with size info
+    """
     results = []
     limit = ida_typeinf.get_ordinal_limit()
 
