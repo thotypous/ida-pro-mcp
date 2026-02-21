@@ -7,7 +7,15 @@ fresh from IDA's current state. This is a single-step operation for the LLM.
 
 import os
 import re
+import gc
 from typing import Annotated
+
+import ida_hexrays
+import ida_funcs
+import ida_typeinf
+import ida_lines
+import ida_loader
+import idc
 
 from .rpc import tool, unsafe
 from .sync import idasync
@@ -238,35 +246,41 @@ def _parse_c_file(content: str) -> dict:
 # IDA Export Logic
 # ============================================================================
 
-_EXPORT_SCRIPT = r'''
-import ida_hexrays
-import ida_funcs
-import ida_typeinf
-import ida_lines
-import idc
-import os
+_BUILTIN_TYPES = frozenset({
+    "__int8", "__int16", "__int32", "__int64",
+    "_BYTE", "_WORD", "_DWORD", "_QWORD", "_OWORD",
+    "_BOOL1", "_BOOL2", "_BOOL4",
+    "_UNKNOWN",
+})
 
-def _decompile_to_str(ea):
+
+def _decompile_to_str(ea: int) -> str | None:
     """Decompile function at ea and return pseudocode string."""
     try:
         # Clear the cached decompilation to force fresh decompilation
-        # This ensures prototype changes, struct modifications, etc. are applied
         ida_hexrays.mark_cfunc_dirty(ea)
 
         cfunc = ida_hexrays.decompile(ea)
         if not cfunc:
             return None
+        
+        # Extract pseudocode lines
         sv = cfunc.get_pseudocode()
         lines = []
         for sl in sv:
             text = ida_lines.tag_remove(sl.line)
             lines.append(text)
+        
+        # Explicitly release the cfunc to free decompiler resources
+        # This helps prevent memory accumulation during batch decompilations
+        del cfunc
+        
         return "\n".join(lines)
     except Exception as e:
         return f"// Decompilation failed: {e}"
 
 
-def _export_type_decl(name):
+def _export_type_decl(name: str) -> str:
     """Export a struct/enum type declaration as C text."""
     til = ida_typeinf.get_idati()
     tif = ida_typeinf.tinfo_t()
@@ -288,14 +302,7 @@ def _export_type_decl(name):
     return f"// Type '{name}' exists but could not be exported"
 
 
-_BUILTIN_TYPES = frozenset({
-    "__int8", "__int16", "__int32", "__int64",
-    "_BYTE", "_WORD", "_DWORD", "_QWORD", "_OWORD",
-    "_BOOL1", "_BOOL2", "_BOOL4",
-    "_UNKNOWN",
-})
-
-def _export_typedef(name):
+def _export_typedef(name: str) -> str | None:
     """Export a typedef declaration."""
     if name.lstrip("_") == "" or name in _BUILTIN_TYPES:
         return None  # Built-in IDA type, skip
@@ -319,7 +326,7 @@ def _export_typedef(name):
     return f"// Typedef '{name}' could not be exported"
 
 
-def _resolve_func_addr(name):
+def _resolve_func_addr(name: str) -> int | None:
     """Resolve a function name to its address."""
     ea = idc.get_name_ea_simple(name)
     if ea == idc.BADADDR:
@@ -327,9 +334,17 @@ def _resolve_func_addr(name):
     return ea
 
 
-def resync_file(filepath, includes, externs, forward_decls, preamble_lines,
-                type_names, typedefs, functions):
-    """Re-export a C file with fresh IDA data."""
+def _do_resync_file(
+    filepath: str,
+    includes: list[str],
+    externs: list[str],
+    forward_decls: list[str],
+    preamble_lines: list[str],
+    type_names: list[str],
+    typedefs: list[str],
+    functions: list[list],
+) -> str:
+    """Re-export a C file with fresh IDA data (called on IDA main thread)."""
     parts = []
 
     # 1. Preamble comments
@@ -370,7 +385,9 @@ def resync_file(filepath, includes, externs, forward_decls, preamble_lines,
             parts.append("")
 
     # 7. Functions (fresh decompilation)
-    for func_info in functions:
+    # Process in batches with periodic cleanup to prevent decompiler resource exhaustion
+    BATCH_SIZE = 10
+    for i, func_info in enumerate(functions):
         addr = func_info[0]
         name = func_info[1]
 
@@ -401,6 +418,10 @@ def resync_file(filepath, includes, externs, forward_decls, preamble_lines,
             parts.append(f"// Decompilation failed for {addr_hex}")
         parts.append("")
         parts.append("")
+        
+        # Periodic cleanup to prevent decompiler resource exhaustion
+        if (i + 1) % BATCH_SIZE == 0:
+            gc.collect()
 
     # Write file
     output = "\n".join(parts)
@@ -413,14 +434,11 @@ def resync_file(filepath, includes, externs, forward_decls, preamble_lines,
     with open(filepath, "w") as f:
         f.write(output)
 
-    return f"Wrote {len(output)} bytes to {filepath}"
+    # Force garbage collection to free decompiler resources
+    # This helps prevent memory accumulation during batch decompilations
+    gc.collect()
 
-result = resync_file(
-    FILEPATH, INCLUDES, EXTERNS, FORWARD_DECLS, PREAMBLE_LINES,
-    TYPE_NAMES, TYPEDEFS, FUNCTIONS
-)
-print(result)
-'''
+    return f"Wrote {len(output)} bytes to {filepath}"
 
 
 # ============================================================================
@@ -448,19 +466,16 @@ def resync_file(
 ) -> list[dict]:
     """Re-export decompiled C files from IDA.
 
-Parses each .c file to find which structs/enums/typedefs and functions
-it contains, then re-exports all of them fresh from IDA's current
-decompiler output. The file is overwritten in place.
+    Parses each .c file to find which structs/enums/typedefs and functions
+    it contains, then re-exports all of them fresh from IDA's current
+    decompiler output. The file is overwritten in place.
 
-Use this after making changes in IDA (renaming variables, setting types,
-adding comments) to update the corresponding source files in rev/.
+    Use this after making changes in IDA (renaming variables, setting types,
+    adding comments) to update the corresponding source files in rev/.
 
-Pass extra_types to inject new struct/enum definitions that don't yet
-exist in the file (e.g. after declare_type in the same session).
-"""
-    import io
-    import sys
-
+    Pass extra_types to inject new struct/enum definitions that don't yet
+    exist in the file (e.g. after declare_type in the same session).
+    """
     files_list = (
         files
         if isinstance(files, list)
@@ -472,8 +487,6 @@ exist in the file (e.g. after declare_type in the same session).
         try:
             # Resolve relative paths against IDA database directory
             if not os.path.isabs(filepath):
-                import ida_loader
-
                 db_path = ida_loader.get_path(ida_loader.PATH_TYPE_IDB)
                 if db_path:
                     db_dir = os.path.dirname(db_path)
@@ -510,35 +523,17 @@ exist in the file (e.g. after declare_type in the same session).
 
             functions_list = [[addr, name] for addr, name in parsed["functions"]]
 
-            # Execute the export script in IDA context
-            stdout_capture = io.StringIO()
-            stderr_capture = io.StringIO()
-            old_stdout = sys.stdout
-            old_stderr = sys.stderr
-
-            try:
-                sys.stdout = stdout_capture
-                sys.stderr = stderr_capture
-
-                exec_globals = {
-                    "__builtins__": __builtins__,
-                    "FILEPATH": filepath,
-                    "INCLUDES": parsed["includes"],
-                    "EXTERNS": parsed["externs"],
-                    "FORWARD_DECLS": parsed["forward_decls"],
-                    "PREAMBLE_LINES": parsed["preamble_lines"],
-                    "TYPE_NAMES": parsed["type_names"],
-                    "TYPEDEFS": parsed["typedefs"],
-                    "FUNCTIONS": functions_list,
-                }
-
-                exec(_EXPORT_SCRIPT, exec_globals)
-            finally:
-                sys.stdout = old_stdout
-                sys.stderr = old_stderr
-
-            stdout_text = stdout_capture.getvalue().strip()
-            stderr_text = stderr_capture.getvalue().strip()
+            # Execute resync directly (no exec() - runs on IDA main thread via @idasync)
+            result_msg = _do_resync_file(
+                filepath,
+                parsed["includes"],
+                parsed["externs"],
+                parsed["forward_decls"],
+                parsed["preamble_lines"],
+                parsed["type_names"],
+                parsed["typedefs"],
+                functions_list,
+            )
 
             result_entry = {
                 "file": filepath,
@@ -547,10 +542,8 @@ exist in the file (e.g. after declare_type in the same session).
                     {"addr": hex(a) if a else None, "name": n}
                     for a, n in parsed["functions"]
                 ],
-                "result": stdout_text,
+                "result": result_msg,
             }
-            if stderr_text:
-                result_entry["warnings"] = stderr_text
 
             results.append(result_entry)
 
