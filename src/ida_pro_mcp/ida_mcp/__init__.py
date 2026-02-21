@@ -29,7 +29,7 @@ from . import api_resources
 from . import api_resync
 
 # Re-export key components for external use
-from .sync import idasync, IDAError, IDASyncError, CancelledError
+from .sync import idasync, IDAError, IDASyncError
 from .rpc import MCP_SERVER, MCP_UNSAFE, tool, unsafe, resource
 from .http import IdaMcpHttpRequestHandler
 from .api_core import init_caches
@@ -53,7 +53,6 @@ __all__ = [
     "idasync",
     "IDAError",
     "IDASyncError",
-    "CancelledError",
     "MCP_SERVER",
     "MCP_UNSAFE",
     "tool",
