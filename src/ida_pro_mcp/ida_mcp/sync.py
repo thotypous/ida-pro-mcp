@@ -1,6 +1,7 @@
 import logging
 import queue
 import functools
+import traceback
 import idaapi
 import idc
 from .rpc import McpToolError
@@ -39,9 +40,10 @@ def _sync_wrapper(ff):
         if not call_stack.empty():
             last_func_name = call_stack.get()
             error_str = f"Call stack is not empty while calling the function {ff.__name__} from {last_func_name}"
-            raise IDASyncError(error_str)
+            return {"ok": False, "error": error_str}
 
         call_stack.put((ff.__name__))
+
         # Enable batch mode for all synchronized operations
         old_batch = idc.batch(1)
         try:
@@ -53,9 +55,15 @@ def _sync_wrapper(ff):
             call_stack.get()
 
     idaapi.execute_sync(runned, idaapi.MFF_WRITE)
-    res = res_container.get()
+    
+    try:
+        res = res_container.get(block=False)
+    except queue.Empty:
+        return {"ok": False, "error": "queue blocked after execute_sync"}
+
     if isinstance(res, Exception):
-        raise res
+        traceback.print_exception(type(res), res, res.__traceback__)
+        return {"ok": False, "error": str(res)}
     return res
 
 

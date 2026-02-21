@@ -41,7 +41,7 @@ def dispatch_proxy(request: dict | str | bytes | bytearray) -> JsonRpcResponse |
     elif request_obj["method"].startswith("notifications/"):
         return dispatch_original(request)
 
-    conn = http.client.HTTPConnection(IDA_HOST, IDA_PORT, timeout=30)
+    conn = http.client.HTTPConnection(IDA_HOST, IDA_PORT, timeout=300)
     try:
         if isinstance(request, dict):
             request = json.dumps(request)

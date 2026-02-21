@@ -104,17 +104,21 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
                 self.send_header("Access-Control-Allow-Private-Network", "true")
 
     def send_error(self, code, message=None, explain=None):
-        self.send_response(code)
-        self.send_header("Content-Type", "text/plain")
-        self.send_cors_headers()
-        self.end_headers()
-        self.wfile.write(f"{message}\n".encode("utf-8"))
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", "text/plain")
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(f"{message}\n".encode("utf-8"))
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, OSError):
+            # Client disconnected - ignore
+            pass
 
     def handle(self):
         """Override to add error handling for connection errors"""
         try:
             super().handle()
-        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, OSError):
             # Client disconnected - normal, suppress traceback
             pass
 
@@ -178,6 +182,9 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
                     last_ping = now
                 time.sleep(1)
 
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, OSError):
+            # Client disconnected - normal, suppress traceback
+            pass
         finally:
             conn.alive = False
             if conn.session_id in self.mcp_server._sse_connections:
@@ -210,12 +217,16 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             sse_conn.send_event("message", response)
 
         # Return 202 Accepted to acknowledge POST
-        self.send_response(202)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_cors_headers()
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(202)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(body)
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, OSError):
+            # Client disconnected - ignore
+            pass
 
     def _handle_mcp_post(self, body: bytes):
         # Parse extensions from query params and store in thread-local
@@ -227,12 +238,16 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         response = self.mcp_server.registry.dispatch(body)
 
         def send_response(status: int, body: bytes):
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_cors_headers()
-            self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_cors_headers()
+                self.end_headers()
+                self.wfile.write(body)
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, OSError):
+                # Client disconnected - ignore
+                pass
 
         # Check if notification (returns None)
         if response is None:

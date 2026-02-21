@@ -865,7 +865,7 @@ def get_stack_frame_variables_internal(
 
 
 def decompile_checked(addr: int):
-    """Decompile a function and raise IDAError on failure (uses cache)"""
+    """Decompile a function and raise IDAError on failure (uses cache)"""  
     if not ida_hexrays.init_hexrays_plugin():
         raise IDAError("Hex-Rays decompiler is not available")
     hf = ida_hexrays.hexrays_failure_t()
@@ -882,6 +882,8 @@ def decompile_checked(addr: int):
         if hf.errea != idaapi.BADADDR:
             message += f" (address: {hex(hf.errea)})"
         raise IDAError(message)
+    
+    # Note: caller is responsible for calling gc.collect() after using cfunc
     return cfunc
 
 

@@ -7,7 +7,6 @@ fresh from IDA's current state. This is a single-step operation for the LLM.
 
 import os
 import re
-import gc
 from typing import Annotated
 
 import ida_hexrays
@@ -271,10 +270,6 @@ def _decompile_to_str(ea: int) -> str | None:
             text = ida_lines.tag_remove(sl.line)
             lines.append(text)
         
-        # Explicitly release the cfunc to free decompiler resources
-        # This helps prevent memory accumulation during batch decompilations
-        del cfunc
-        
         return "\n".join(lines)
     except Exception as e:
         return f"// Decompilation failed: {e}"
@@ -386,7 +381,6 @@ def _do_resync_file(
 
     # 7. Functions (fresh decompilation)
     # Process in batches with periodic cleanup to prevent decompiler resource exhaustion
-    BATCH_SIZE = 10
     for i, func_info in enumerate(functions):
         addr = func_info[0]
         name = func_info[1]
@@ -418,10 +412,6 @@ def _do_resync_file(
             parts.append(f"// Decompilation failed for {addr_hex}")
         parts.append("")
         parts.append("")
-        
-        # Periodic cleanup to prevent decompiler resource exhaustion
-        if (i + 1) % BATCH_SIZE == 0:
-            gc.collect()
 
     # Write file
     output = "\n".join(parts)
@@ -433,10 +423,6 @@ def _do_resync_file(
     os.makedirs(os.path.dirname(filepath) or ".", exist_ok=True)
     with open(filepath, "w") as f:
         f.write(output)
-
-    # Force garbage collection to free decompiler resources
-    # This helps prevent memory accumulation during batch decompilations
-    gc.collect()
 
     return f"Wrote {len(output)} bytes to {filepath}"
 
