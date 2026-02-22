@@ -30,6 +30,10 @@ _RE_PRAGMA = re.compile(r"^\s*#pragma\s+.*")
 _RE_STRUCT = re.compile(
     r"^\s*(?:typedef\s+)?struct\s+(\w+)\s*\{", re.MULTILINE
 )
+# Matches: union Name {, typedef union Name {
+_RE_UNION = re.compile(
+    r"^\s*(?:typedef\s+)?union\s+(\w+)\s*\{", re.MULTILINE
+)
 # Matches: enum Name {, typedef enum Name {, enum __bitmask Name : Type {
 _RE_ENUM = re.compile(
     r"^\s*(?:typedef\s+)?enum\s+(?:__\w+\s+)?(\w+)(?:\s*:\s*\S+)?\s*\{", re.MULTILINE
@@ -114,6 +118,12 @@ def _parse_c_file(content: str) -> dict:
     type_entries = []  # (position, name) for ordering
 
     for m in _RE_STRUCT.finditer(content):
+        name = m.group(1)
+        if name not in seen_types:
+            seen_types.add(name)
+            type_entries.append((m.start(), name))
+
+    for m in _RE_UNION.finditer(content):
         name = m.group(1)
         if name not in seen_types:
             seen_types.add(name)
@@ -216,6 +226,7 @@ def _parse_c_file(content: str) -> dict:
         _RE_PRAGMA,
         _RE_INCLUDE,
         _RE_STRUCT,
+        _RE_UNION,
         _RE_ENUM,
         _RE_SEPARATOR,
         _RE_TYPEDEF_SIMPLE,
