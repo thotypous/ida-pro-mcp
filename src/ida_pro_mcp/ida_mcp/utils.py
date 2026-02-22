@@ -140,13 +140,6 @@ class RenameBatch(TypedDict, total=False):
     ]
 
 
-class StructFieldQuery(TypedDict):
-    """Struct field query for xrefs"""
-
-    struct: Annotated[str, "Structure name"]
-    field: Annotated[str, "Field name"]
-
-
 class ListQuery(TypedDict, total=False):
     """Pagination query for listing operations"""
 

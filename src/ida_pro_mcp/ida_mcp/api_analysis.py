@@ -31,7 +31,6 @@ from .utils import (
     DisassemblyFunction,
     Xref,
     BasicBlock,
-    StructFieldQuery,
     InsnPattern,
 )
 
@@ -373,93 +372,6 @@ def xrefs_to(
             results.append({"addr": addr, "xrefs": xrefs, "more": more})
         except Exception as e:
             results.append({"addr": addr, "xrefs": None, "error": str(e)})
-
-    return results
-
-
-@tool
-@idasync
-def xrefs_to_field(queries: list[StructFieldQuery] | StructFieldQuery) -> list[dict]:
-    """Get cross-references to structure fields"""
-    if isinstance(queries, dict):
-        queries = [queries]
-
-    results = []
-    til = ida_typeinf.get_idati()
-    if not til:
-        return [
-            {
-                "struct": q.get("struct"),
-                "field": q.get("field"),
-                "xrefs": [],
-                "error": "Failed to retrieve type library",
-            }
-            for q in queries
-        ]
-
-    for query in queries:
-        struct_name = query.get("struct", "")
-        field_name = query.get("field", "")
-
-        try:
-            tif = ida_typeinf.tinfo_t()
-            if not tif.get_named_type(
-                til, struct_name, ida_typeinf.BTF_STRUCT, True, False
-            ):
-                results.append(
-                    {
-                        "struct": struct_name,
-                        "field": field_name,
-                        "xrefs": [],
-                        "error": f"Struct '{struct_name}' not found",
-                    }
-                )
-                continue
-
-            idx = ida_typeinf.get_udm_by_fullname(None, struct_name + "." + field_name)
-            if idx == -1:
-                results.append(
-                    {
-                        "struct": struct_name,
-                        "field": field_name,
-                        "xrefs": [],
-                        "error": f"Field '{field_name}' not found in '{struct_name}'",
-                    }
-                )
-                continue
-
-            tid = tif.get_udm_tid(idx)
-            if tid == ida_idaapi.BADADDR:
-                results.append(
-                    {
-                        "struct": struct_name,
-                        "field": field_name,
-                        "xrefs": [],
-                        "error": "Unable to get tid",
-                    }
-                )
-                continue
-
-            xrefs = []
-            xref: ida_xref.xrefblk_t
-            for xref in idautils.XrefsTo(tid):
-                xrefs += [
-                    Xref(
-                        addr=hex(xref.frm),
-                        type="code" if xref.iscode else "data",
-                        fn=get_function(xref.frm, raise_error=False),
-                    )
-                ]
-            results.append({"struct": struct_name, "field": field_name, "xrefs": xrefs})
-        except Exception as e:
-            results.append(
-                {
-                    "struct": struct_name,
-                    "field": field_name,
-                    "xrefs": [],
-                    "error": str(e),
-                }
-            )
 
     return results
 
