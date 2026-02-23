@@ -240,6 +240,18 @@ class UndefineOp(TypedDict, total=False):
     size: Annotated[int, "Optional size in bytes"]
 
 
+class EnumLiteralOp(TypedDict, total=False):
+    """Apply enum name to an immediate operand at a specific instruction address"""
+
+    addr: Annotated[str, "Instruction address (hex or decimal)"]
+    enum: Annotated[str, "Enum type name (e.g. 'dp_caps0_bits_t')"]
+    op: Annotated[int, "Operand index (default: 1)"]
+    invert: Annotated[
+        bool,
+        "Apply bitwise NOT after enum (for inverted masks like 0xF7 -> ~BIT). Default: false",
+    ]
+
+
 # ============================================================================
 # TypedDict Definitions for Results
 # ============================================================================

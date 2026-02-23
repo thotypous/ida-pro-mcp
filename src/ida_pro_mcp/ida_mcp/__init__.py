@@ -27,6 +27,7 @@ from . import api_debug
 from . import api_python
 from . import api_resources
 from . import api_resync
+from . import api_enum
 
 # Re-export key components for external use
 from .sync import idasync, IDAError, IDASyncError
@@ -49,6 +50,7 @@ __all__ = [
     "api_debug",
     "api_python",
     "api_resources",
+    "api_enum",
     # Re-exported components
     "idasync",
     "IDAError",
