@@ -36,7 +36,7 @@ _RE_UNION = re.compile(
 )
 # Matches: enum Name {, typedef enum Name {, enum __bitmask Name : Type {
 _RE_ENUM = re.compile(
-    r"^\s*(?:typedef\s+)?enum\s+(?:__\w+\s+)?(\w+)(?:\s*:\s*\S+)?\s*\{", re.MULTILINE
+    r"^\s*(?:typedef\s+)?enum\s+(?:__\w+\s+)?(\w+)(?:\s*:\s*[^{]+)?\s*\{", re.MULTILINE
 )
 # Matches simple typedefs: typedef int16_t __int16;
 # (but NOT typedef struct/enum, and NOT function pointers)
