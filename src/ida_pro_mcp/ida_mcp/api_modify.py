@@ -43,6 +43,16 @@ def set_comments(items: list[CommentOp] | CommentOp):
     for item in items:
         addr_str = item.get("addr", "")
         comment = item.get("comment", "")
+        comment_type = item.get("type", "inline")
+
+        if comment_type not in ("inline", "block"):
+            results.append(
+                {
+                    "addr": addr_str,
+                    "error": f"Invalid comment type '{comment_type}': must be 'inline' or 'block'",
+                }
+            )
+            continue
 
         try:
             ea = parse_address(addr_str)
@@ -88,30 +98,106 @@ def set_comments(items: list[CommentOp] | CommentOp):
                 cfunc.del_orphan_cmts()
                 cfunc.save_user_cmts()
 
-            tl = idaapi.treeloc_t()
-            tl.ea = nearest_ea
-            for itp in range(idaapi.ITP_SEMI, idaapi.ITP_COLON):
-                tl.itp = itp
-                cfunc.set_user_cmt(tl, comment)
-                cfunc.save_user_cmts()
-                cfunc.refresh_func_ctext()
-                if not cfunc.has_orphan_cmts():
-                    results.append({"addr": addr_str, "ok": True})
-                    break
-                cfunc.del_orphan_cmts()
-                cfunc.save_user_cmts()
+            if comment_type == "block":
+                results.append(
+                    _set_block_comment(cfunc, ea, nearest_ea, addr_str, comment)
+                )
             else:
                 results.append(
-                    {
-                        "addr": addr_str,
-                        "ok": True,
-                        "error": f"Failed to set decompiler comment at {hex(ea)}",
-                    }
+                    _set_inline_comment(cfunc, nearest_ea, addr_str, comment)
                 )
         except Exception as e:
             results.append({"addr": addr_str, "error": str(e)})
 
     return results
+
+
+def _set_inline_comment(cfunc, nearest_ea, addr_str, comment):
+    """Set an inline (end-of-line) comment using ITP_SEMI..ITP_COLON scan."""
+    tl = idaapi.treeloc_t()
+    tl.ea = nearest_ea
+    for itp in range(idaapi.ITP_SEMI, idaapi.ITP_COLON):
+        tl.itp = itp
+        cfunc.set_user_cmt(tl, comment)
+        cfunc.save_user_cmts()
+        cfunc.refresh_func_ctext()
+        if not cfunc.has_orphan_cmts():
+            return {"addr": addr_str, "ok": True}
+        cfunc.del_orphan_cmts()
+        cfunc.save_user_cmts()
+    return {
+        "addr": addr_str,
+        "ok": True,
+        "error": f"Failed to set decompiler comment at {hex(nearest_ea)}",
+    }
+
+
+def _find_stmt_ea(cfunc, target_ea):
+    """Walk the Ctree to find the EA of the enclosing cinsn_t (statement) for a given EA.
+
+    Block comments (ITP_BLOCK1) can only be anchored to statements, not
+    sub-expressions.  This visitor walks the tree recording parents, then
+    climbs from the deepest node whose EA matches *target_ea* up to the
+    first cinsn_t parent and returns its EA.
+    """
+
+    class ParentFinder(ida_hexrays.ctree_parentee_t):
+        def __init__(self):
+            ida_hexrays.ctree_parentee_t.__init__(self)
+            self.found_ea = None
+
+        def visit_expr(self, e):
+            if e.ea == target_ea:
+                # Walk parents to find enclosing statement
+                for i in range(self.parents.size() - 1, -1, -1):
+                    parent = self.parents.at(i)
+                    if parent.is_expr():
+                        continue
+                    # It's a statement (cinsn_t)
+                    stmt_ea = parent.ea
+                    if stmt_ea != idaapi.BADADDR:
+                        self.found_ea = stmt_ea
+                        return 1  # stop
+                    break
+            return 0
+
+        def visit_insn(self, i):
+            if i.ea == target_ea:
+                self.found_ea = target_ea
+                return 1  # stop – already a statement
+            return 0
+
+    pf = ParentFinder()
+    pf.apply_to(cfunc.body, None)
+    return pf.found_ea
+
+
+def _set_block_comment(cfunc, orig_ea, nearest_ea, addr_str, comment):
+    """Set a block comment (before the statement) using ITP_BLOCK1."""
+    # Try to find the enclosing statement EA for the target address.
+    stmt_ea = _find_stmt_ea(cfunc, nearest_ea)
+    if stmt_ea is None:
+        # Fallback: use the nearest EA directly
+        stmt_ea = nearest_ea
+
+    tl = idaapi.treeloc_t()
+    tl.ea = stmt_ea
+    tl.itp = ida_hexrays.ITP_BLOCK1
+
+    cfunc.set_user_cmt(tl, comment)
+    cfunc.save_user_cmts()
+    cfunc.refresh_func_ctext()
+
+    if cfunc.has_orphan_cmts():
+        cfunc.del_orphan_cmts()
+        cfunc.save_user_cmts()
+        return {
+            "addr": addr_str,
+            "ok": True,
+            "error": f"Block comment became orphan at {hex(stmt_ea)} – cleared",
+        }
+
+    return {"addr": addr_str, "ok": True}
 
 
 @tool

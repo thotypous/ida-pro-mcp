@@ -29,17 +29,33 @@ from ..api_modify import (
 
 @test()
 def test_set_comment_roundtrip():
-    """set_comments can add and remove comments"""
+    """set_comments can add and remove inline comments"""
     fn_addr = get_any_function()
     if not fn_addr:
         return
 
-    # Add a comment
-    result = set_comments({"addr": fn_addr, "comment": "__TEST_COMMENT__"})
+    # Add an inline comment
+    result = set_comments({"addr": fn_addr, "comment": "__TEST_COMMENT__", "type": "inline"})
     assert_is_list(result, min_length=1)
 
     # Clear the comment
-    result = set_comments({"addr": fn_addr, "comment": ""})
+    result = set_comments({"addr": fn_addr, "comment": "", "type": "inline"})
+    assert_is_list(result, min_length=1)
+
+
+@test()
+def test_set_block_comment_roundtrip():
+    """set_comments can add and remove block comments"""
+    fn_addr = get_any_function()
+    if not fn_addr:
+        return
+
+    # Add a block comment
+    result = set_comments({"addr": fn_addr, "comment": "__TEST_BLOCK__", "type": "block"})
+    assert_is_list(result, min_length=1)
+
+    # Clear the block comment
+    result = set_comments({"addr": fn_addr, "comment": "", "type": "block"})
     assert_is_list(result, min_length=1)
 
 

@@ -83,6 +83,10 @@ class CommentOp(TypedDict):
 
     addr: Annotated[str, "Address (hex or decimal)"]
     comment: Annotated[str, "Comment text"]
+    type: Annotated[
+        str,
+        "Comment placement: 'inline' (end-of-line //) or 'block' (before the statement)",
+    ]
 
 
 class AsmPatchOp(TypedDict):
