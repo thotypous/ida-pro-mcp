@@ -37,6 +37,7 @@ def declare_type(
 Uses idc.parse_decls internally so it supports #pragma pack, enums,
 typedefs, structs, and all C type declaration syntax.
 """
+    import re
     import idc as _idc
 
     # Don't use normalize_list_input here - it splits by comma which
@@ -48,6 +49,36 @@ typedefs, structs, and all C type declaration syntax.
     else:
         decls_list = [str(decls)]
 
+    # Patterns to extract declared type names
+    _type_name_patterns = [
+        re.compile(r'(?:typedef\s+)?struct\s+(\w+)\s*\{', re.MULTILINE),
+        re.compile(r'(?:typedef\s+)?union\s+(\w+)\s*\{', re.MULTILINE),
+        re.compile(r'(?:typedef\s+)?enum\s+(?:__\w+\s+)?(\w+)(?:\s*:\s*[^{]+)?\s*\{', re.MULTILINE),
+        re.compile(r'typedef\s+(?!struct\b|enum\b|union\b)\w[\w\s]*?(\w+)\s*;', re.MULTILINE),
+        re.compile(r'typedef\s+.*?\(\s*(?:__\w+\s+)?\*\s*(\w+)\s*\)\s*\(.*?\)\s*;', re.MULTILINE),
+    ]
+
+    def _extract_sizes(decl_text: str) -> dict[str, int | None]:
+        """Extract type names from a declaration and return their sizes."""
+        names = []
+        for pat in _type_name_patterns:
+            for m in pat.finditer(decl_text):
+                name = m.group(1)
+                if name not in names:
+                    names.append(name)
+        sizes = {}
+        for name in names:
+            tif = ida_typeinf.tinfo_t()
+            if tif.get_named_type(None, name):
+                size = tif.get_size()
+                if size is not None and size != ida_typeinf.BADSIZE:
+                    sizes[name] = size
+                else:
+                    sizes[name] = None
+            else:
+                sizes[name] = None
+        return sizes
+
     results = []
 
     for decl in decls_list:
@@ -58,7 +89,11 @@ typedefs, structs, and all C type declaration syntax.
                     {"decl": decl, "error": f"parse_decls returned {errors} errors"}
                 )
             else:
-                results.append({"decl": decl, "ok": True})
+                entry = {"decl": decl, "ok": True}
+                sizes = _extract_sizes(decl)
+                if sizes:
+                    entry["sizeof"] = sizes
+                results.append(entry)
         except Exception as e:
             results.append({"decl": decl, "error": str(e)})
 
