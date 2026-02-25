@@ -26,9 +26,9 @@ from .sync import idasync
 # Matches: #pragma
 _RE_PRAGMA = re.compile(r"^\s*#pragma\s+.*")
 
-# Matches: struct Name {, typedef struct Name {
+# Matches: struct Name {, typedef struct Name {, struct __attribute__((...)) Name {
 _RE_STRUCT = re.compile(
-    r"^\s*(?:typedef\s+)?struct\s+(\w+)\s*\{", re.MULTILINE
+    r"^\s*(?:typedef\s+)?struct(?:\s+__attribute__\(\(.*?\)\))*\s+(\w+)\s*\{", re.MULTILINE
 )
 # Matches: union Name {, typedef union Name {
 _RE_UNION = re.compile(

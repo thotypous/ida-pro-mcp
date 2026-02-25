@@ -51,7 +51,7 @@ typedefs, structs, and all C type declaration syntax.
 
     # Patterns to extract declared type names
     _type_name_patterns = [
-        re.compile(r'(?:typedef\s+)?struct\s+(\w+)\s*\{', re.MULTILINE),
+        re.compile(r'(?:typedef\s+)?struct(?:\s+__attribute__\(\(.*?\)\))*\s+(\w+)\s*\{', re.MULTILINE),
         re.compile(r'(?:typedef\s+)?union\s+(\w+)\s*\{', re.MULTILINE),
         re.compile(r'(?:typedef\s+)?enum\s+(?:__\w+\s+)?(\w+)(?:\s*:\s*[^{]+)?\s*\{', re.MULTILINE),
         re.compile(r'typedef\s+(?!struct\b|enum\b|union\b)\w[\w\s]*?(\w+)\s*;', re.MULTILINE),
