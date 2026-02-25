@@ -286,6 +286,21 @@ def _decompile_to_str(ea: int) -> str | None:
         return f"// Decompilation failed: {e}"
 
 
+def _sizeof_suffix(name: str, tif: ida_typeinf.tinfo_t) -> str:
+    """Return a ' /* sizeof(Name) == N */' suffix, or empty string."""
+    size = tif.get_size()
+    if size is not None and size != ida_typeinf.BADSIZE:
+        return f" /* sizeof({name}) == {size:#x} ({size}) */"
+    return ""
+
+
+def _append_sizeof_to_decl(filtered: list[str], name: str, tif: ida_typeinf.tinfo_t) -> None:
+    """Append sizeof comment to the closing line of a type declaration (in-place)."""
+    suffix = _sizeof_suffix(name, tif)
+    if suffix and filtered:
+        filtered[-1] = filtered[-1].rstrip() + suffix
+
+
 def _export_type_decl(name: str) -> str:
     """Export a struct/enum type declaration as C text."""
     til = ida_typeinf.get_idati()
@@ -303,6 +318,7 @@ def _export_type_decl(name: str) -> str:
                 filtered.pop(0)
             while filtered and not filtered[-1].strip():
                 filtered.pop()
+            _append_sizeof_to_decl(filtered, name, tif)
             return '\n'.join(filtered)
 
     return f"// Type '{name}' exists but could not be exported"
@@ -327,6 +343,7 @@ def _export_typedef(name: str) -> str | None:
                 filtered.pop(0)
             while filtered and not filtered[-1].strip():
                 filtered.pop()
+            _append_sizeof_to_decl(filtered, name, tif)
             return '\n'.join(filtered)
 
     return f"// Typedef '{name}' could not be exported"
